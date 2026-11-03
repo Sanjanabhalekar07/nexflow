@@ -76,7 +76,7 @@ Object store: `workspace`, keyed by `key`.
 | `nexflow-workflows-v1` | Array of workflow graphs. |
 | `nexflow-executions-v1` | Newest-first execution records, capped at 100. |
 
-The execution history page can export an individual run, including its node messages and output snapshots, as a JSON file.
+The execution history page filters runs by status and date, searches workflow or step names, and can export an individual run or the visible filtered runs as JSON.
 
 Workflow edits are autosaved after a 350 ms debounce. Creating, importing, and cloning a workflow save before navigating to its editor route. Theme preference is stored in local storage under `nexflow-theme`.
 

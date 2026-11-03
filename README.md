@@ -36,6 +36,7 @@ npm start
 - Configure HTTP Request, IF, Wait, Transform, and Notification nodes in the settings panel.
 - Configure HTTP methods, URLs, JSON headers, and request bodies for non-GET methods.
 - Validate the graph, simulate a run, and inspect the node outcomes on the canvas or in execution history.
+- Search execution history by workflow or step, then export the filtered runs as JSON.
 - Undo or redo with the toolbar, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, or Ctrl/Cmd+Y.
 - Import or export the active workflow as JSON. Theme choice is saved across pages.
 
