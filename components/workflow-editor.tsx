@@ -36,6 +36,38 @@ function isWorkflow(value: unknown): value is Workflow {
   }
   return true;
 }
+const samplePayload: Record<string, unknown> = { id: 42, status: "active", name: "Alex Morgan", firstName: "Alex", lastName: "Morgan" };
+const transformExpression = "{{ firstName + ' ' + lastName }}";
+function evaluateTransform(expression: string, payload: Record<string, unknown>): string {
+  const source = expression.trim().replace(/^\{\{\s*/, "").replace(/\s*\}\}$/, "");
+  const token = /(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|(-?\d+(?:\.\d+)?))/y;
+  const values: string[] = []; let cursor = 0; let needsValue = true;
+  while (cursor < source.length) {
+    while (/\s/.test(source[cursor] ?? "")) cursor++;
+    if (cursor >= source.length) break;
+    if (source[cursor] === "+") {
+      if (needsValue) throw new Error("Unexpected + operator");
+      needsValue = true; cursor++; continue;
+    }
+    if (!needsValue) throw new Error("Use + between expression values");
+    token.lastIndex = cursor; const match = token.exec(source);
+    if (!match) throw new Error("Use field names, string or number literals, and + concatenation");
+    if (match[1] !== undefined || match[2] !== undefined) {
+      const escapes: Record<string, string> = { n: "\n", r: "\r", t: "\t" };
+      values.push((match[1] ?? match[2] ?? "").replace(/\\([\\'"nrt])/g, (_all, escaped: string) => escapes[escaped] ?? escaped));
+    } else if (match[3] !== undefined) {
+      let value: unknown = payload;
+      for (const part of match[3].split(".")) {
+        if (part === "__proto__" || part === "prototype" || part === "constructor" || !value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, part)) { value = ""; break; }
+        value = (value as Record<string, unknown>)[part];
+      }
+      values.push(value === null || value === undefined ? "" : String(value));
+    } else values.push(match[4]);
+    cursor = token.lastIndex; needsValue = false;
+  }
+  if (needsValue || values.length === 0) throw new Error("Expression must contain a value");
+  return values.join("");
+}
 const starter: FlowNode[] = [
   { id: "n1", kind: "trigger", title: "When I run this workflow", x: 180, y: 116, config: {} },
   { id: "n2", kind: "http", title: "Fetch customer record", x: 480, y: 116, config: { method: "GET", url: "https://api.example.com/customers/42" } },
@@ -58,6 +90,7 @@ function validateWorkflow(flow: Workflow): { message: string; nodeId?: string }[
     if (node.kind === "http" && !node.config.url?.startsWith("http")) issues.push({ message: `${node.title} needs a valid request URL`, nodeId: node.id });
     if (node.kind === "notify" && !node.config.recipient?.includes("@")) issues.push({ message: `${node.title} needs a valid recipient email`, nodeId: node.id });
     if (node.kind === "delay" && (!Number.isFinite(Number(node.config.duration)) || Number(node.config.duration) < 1)) issues.push({ message: `${node.title} needs a duration of at least 1`, nodeId: node.id });
+    if (node.kind === "transform") { try { evaluateTransform(node.config.expression ?? transformExpression, samplePayload); } catch { issues.push({ message: `${node.title} has an unsupported expression`, nodeId: node.id }); } }
     if (node.kind === "condition") {
       const branches = flow.edges.filter((edge) => edge.from === node.id).map((edge) => edge.branch?.toLowerCase());
       if (!branches.includes("yes") || !branches.includes("no")) issues.push({ message: `${node.title} needs both Yes and No outputs`, nodeId: node.id });
@@ -202,7 +235,7 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
   const run = async () => {
     if (!validate()) return;
     const startedAt = new Date().toISOString(); const started = Date.now();
-    const output: Record<string, unknown> = { id: 42, status: "active", name: "Alex Morgan", firstName: "Alex", lastName: "Morgan" };
+    const output = Object.assign(Object.create(null) as Record<string, unknown>, samplePayload);
     const logs: ExecutionNode[] = []; const queue = active.nodes.filter((item) => item.kind === "trigger").map((item) => item.id); const visited = new Set<string>();
     setPlaying(true); setRunState("idle"); setNodeRunStates({}); setTraversedEdges([]);
     try {
@@ -216,7 +249,11 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
         let message = "Node completed successfully"; let outgoing = active.edges.filter((edge) => edge.from === id);
         if (current.kind === "trigger") message = "Manual trigger received sample customer data";
         if (current.kind === "http") message = `Mock ${current.config.method ?? "GET"} request returned HTTP 200`;
-        if (current.kind === "transform") { output[current.config.field || "fullName"] = `${output.firstName} ${output.lastName}`; message = `Created output field “${current.config.field || "fullName"}”`; }
+        if (current.kind === "transform") {
+          const field = current.config.field || "fullName";
+          try { output[field] = evaluateTransform(current.config.expression ?? transformExpression, output); message = `Created output field “${field}”`; }
+          catch { logs.push({ nodeId: id, nodeName: current.title, status: "error", message: "The transform expression could not be evaluated" }); setNodeRunStates((states) => ({ ...states, [id]: "error" })); break; }
+        }
         if (current.kind === "condition") {
           const actual = String(output[current.config.field || "status"] ?? ""); const expected = current.config.value ?? ""; const operator = current.config.operator || "equals";
           const matched = operator === "contains" ? actual.includes(expected) : operator === "greater" ? Number(actual) > Number(expected) : operator === "exists" ? actual.length > 0 : actual === expected;

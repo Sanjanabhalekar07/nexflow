@@ -55,7 +55,7 @@ See [docs/architecture.md](docs/architecture.md) for the graph model, persistenc
 ## Known limitations
 
 - HTTP requests and notifications are simulated. No credentials, network calls, or external integrations are used.
-- The simulator runs against a fixed sample customer payload. Transform nodes create the configured output field from the sample first and last name; arbitrary expressions are not evaluated.
+- The simulator runs against a fixed sample customer payload. Transform expressions support field names, string/number literals, and `+` concatenation; arbitrary JavaScript is not evaluated.
 - Delay durations are shortened for demonstration, with a maximum simulated wait of 1.2 seconds per node.
 - Execution history is local to the browser and limited to the latest 100 runs.
 - This repository currently has lint and production build commands but no automated test suite.
