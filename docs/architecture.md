@@ -97,4 +97,4 @@ Workflow edits are autosaved after the initial IndexedDB read succeeds and a 350
 - The app has no backend, accounts, collaboration, real credentials, or external integrations.
 - Browser storage does not synchronize between profiles or devices and can be removed by clearing site data.
 - The simulator uses the fixed sample payload. It does not fetch real responses, interpret arbitrary expressions, or implement production retry/timeout policies.
-- Current repository scripts include lint and build only; automated tests have not been added.
+- The automated unit suite covers graph validation, parsing and safe expressions, condition evaluation, message interpolation, and skipped-node reporting. Browser interactions still need a manual demonstration.

@@ -4,6 +4,8 @@ Nexflow is a browser-based workflow editor inspired by tools such as n8n, Zapier
 
 ## Run locally
 
+Use Node.js 22.6 or newer. This version supports the built-in TypeScript stripping used by the test command.
+
 ```bash
 npm install
 npm run dev
@@ -15,6 +17,7 @@ Useful project commands:
 
 ```bash
 npm run lint
+npm run test
 npm run build
 npm start
 ```
@@ -60,4 +63,4 @@ See [docs/architecture.md](docs/architecture.md) for the graph model, persistenc
 - The simulator starts from the trigger's sample JSON (the built-in demo uses a sample customer payload). Transform expressions support field names, string/number literals, and `+` concatenation; arbitrary JavaScript is not evaluated.
 - Delay durations are shortened for demonstration, with a maximum simulated wait of 1.2 seconds per node.
 - Execution history is local to the browser and limited to the latest 100 runs.
-- This repository currently has lint and production build commands but no automated test suite.
+- The automated suite covers graph validation, payload parsing, safe transforms, condition operators, message interpolation, and skipped-node reporting. It does not replace a full browser end-to-end suite.

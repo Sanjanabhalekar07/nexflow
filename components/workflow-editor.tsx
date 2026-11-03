@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { listExecutions, saveExecution, type ExecutionNode, type ExecutionRecord } from "@/lib/executions";
+import { evaluateCondition, evaluateTransform, getSkippedNodes, isWorkflow, parseSampleInput, readPayloadPath, renderMessage, samplePayload, transformExpression, validateWorkflow, type Workflow, type WorkflowEdge, type WorkflowKind, type WorkflowNode } from "@/lib/workflow-engine";
 import { useTheme } from "@/components/theme-provider";
 
-type Kind = "trigger" | "http" | "condition" | "delay" | "transform" | "notify" | "end";
-type FlowNode = { id: string; kind: Kind; title: string; x: number; y: number; config: Record<string, string> };
-type Edge = { id: string; from: string; to: string; branch?: string };
-type Workflow = { id: string; name: string; updated: string; nodes: FlowNode[]; edges: Edge[] };
+type Kind = WorkflowKind;
+type FlowNode = WorkflowNode;
+type Edge = WorkflowEdge;
 type CanvasRunStatus = "running" | "success" | "skipped" | "error";
 
 const palette: { kind: Kind; title: string; group: string; icon: string; color: string; description: string }[] = [
@@ -21,69 +21,6 @@ const palette: { kind: Kind; title: string; group: string; icon: string; color: 
   { kind: "notify", title: "Send notification", group: "ACTIONS", icon: "✉", color: "rose", description: "Send a simulated message" },
   { kind: "end", title: "End workflow", group: "OTHER", icon: "■", color: "slate", description: "Finish this workflow run" },
 ];
-function isWorkflow(value: unknown): value is Workflow {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<Workflow>;
-  if (typeof candidate.id !== "string" || typeof candidate.name !== "string" || typeof candidate.updated !== "string" || !Array.isArray(candidate.nodes) || !Array.isArray(candidate.edges)) return false;
-  const nodeIds = new Set<string>(); const edgeIds = new Set<string>();
-  for (const item of candidate.nodes) {
-    if (!item || typeof item !== "object" || typeof item.id !== "string" || !item.id || nodeIds.has(item.id) || typeof item.title !== "string" || !palette.some((entry) => entry.kind === item.kind) || !Number.isFinite(item.x) || !Number.isFinite(item.y) || !item.config || typeof item.config !== "object" || Array.isArray(item.config) || Object.values(item.config).some((entry) => typeof entry !== "string")) return false;
-    nodeIds.add(item.id);
-  }
-  for (const edge of candidate.edges) {
-    if (!edge || typeof edge !== "object" || typeof edge.id !== "string" || !edge.id || edgeIds.has(edge.id) || typeof edge.from !== "string" || typeof edge.to !== "string" || !nodeIds.has(edge.from) || !nodeIds.has(edge.to) || (edge.branch !== undefined && typeof edge.branch !== "string")) return false;
-    edgeIds.add(edge.id);
-  }
-  return true;
-}
-const samplePayload: Record<string, unknown> = { id: 42, status: "active", name: "Alex Morgan", firstName: "Alex", lastName: "Morgan" };
-const transformExpression = "{{ firstName + ' ' + lastName }}";
-function parseSampleInput(source?: string): Record<string, unknown> {
-  const value: unknown = JSON.parse(source?.trim() || JSON.stringify(samplePayload));
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Sample input must be a JSON object");
-  return value as Record<string, unknown>;
-}
-function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
-  let value: unknown = payload;
-  for (const part of path.split(".")) {
-    if (part === "__proto__" || part === "prototype" || part === "constructor" || !value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, part)) return "";
-    value = (value as Record<string, unknown>)[part];
-  }
-  return value ?? "";
-}
-function renderMessage(template: string, payload: Record<string, unknown>): string {
-  return template.replace(/\{\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}\}/g, (_match, path: string) => String(readPayloadPath(payload, path)));
-}
-function evaluateTransform(expression: string, payload: Record<string, unknown>): string {
-  const source = expression.trim().replace(/^\{\{\s*/, "").replace(/\s*\}\}$/, "");
-  const token = /(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|(-?\d+(?:\.\d+)?))/y;
-  const values: string[] = []; let cursor = 0; let needsValue = true;
-  while (cursor < source.length) {
-    while (/\s/.test(source[cursor] ?? "")) cursor++;
-    if (cursor >= source.length) break;
-    if (source[cursor] === "+") {
-      if (needsValue) throw new Error("Unexpected + operator");
-      needsValue = true; cursor++; continue;
-    }
-    if (!needsValue) throw new Error("Use + between expression values");
-    token.lastIndex = cursor; const match = token.exec(source);
-    if (!match) throw new Error("Use field names, string or number literals, and + concatenation");
-    if (match[1] !== undefined || match[2] !== undefined) {
-      const escapes: Record<string, string> = { n: "\n", r: "\r", t: "\t" };
-      values.push((match[1] ?? match[2] ?? "").replace(/\\([\\'"nrt])/g, (_all, escaped: string) => escapes[escaped] ?? escaped));
-    } else if (match[3] !== undefined) {
-      let value: unknown = payload;
-      for (const part of match[3].split(".")) {
-        if (part === "__proto__" || part === "prototype" || part === "constructor" || !value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, part)) { value = ""; break; }
-        value = (value as Record<string, unknown>)[part];
-      }
-      values.push(value === null || value === undefined ? "" : String(value));
-    } else values.push(match[4]);
-    cursor = token.lastIndex; needsValue = false;
-  }
-  if (needsValue || values.length === 0) throw new Error("Expression must contain a value");
-  return values.join("");
-}
 const starter: FlowNode[] = [
   { id: "n1", kind: "trigger", title: "When I run this workflow", x: 180, y: 116, config: {} },
   { id: "n2", kind: "http", title: "Fetch customer record", x: 480, y: 116, config: { method: "GET", url: "https://api.example.com/customers/42" } },
@@ -95,55 +32,6 @@ const starter: FlowNode[] = [
 const initial: Workflow = { id: "welcome", name: "Customer welcome flow", updated: new Date().toISOString(), nodes: starter, edges: [{ id: "e1", from: "n1", to: "n2" }, { id: "e2", from: "n2", to: "n3" }, { id: "e3", from: "n3", to: "n4", branch: "Yes" }, { id: "e4", from: "n4", to: "n5" }, { id: "e5", from: "n3", to: "n6", branch: "No" }] };
 const key = "nexflow-workflows-v1";
 const uid = () => Math.random().toString(36).slice(2, 9);
-
-function validateWorkflow(flow: Workflow): { message: string; nodeId?: string }[] {
-  const issues: { message: string; nodeId?: string }[] = [];
-  const nodes = new Map(flow.nodes.map((node) => [node.id, node]));
-  const triggers = flow.nodes.filter((node) => node.kind === "trigger");
-  if (!triggers.length) issues.push({ message: "Add a trigger to start this workflow" });
-  if (triggers.length > 1) issues.push({ message: "This simulator supports one manual trigger per workflow", nodeId: triggers[1].id });
-  for (const node of flow.nodes) {
-    if (node.kind !== "trigger" && flow.edges.every((edge) => edge.to !== node.id)) issues.push({ message: `${node.title} has no incoming connection`, nodeId: node.id });
-    if (node.kind === "http") {
-      if (!node.config.url?.startsWith("http")) issues.push({ message: `${node.title} needs a valid request URL`, nodeId: node.id });
-      try { const headers: unknown = JSON.parse(node.config.headers ?? "{}"); if (!headers || typeof headers !== "object" || Array.isArray(headers) || Object.values(headers).some((value) => typeof value !== "string")) throw new Error(); }
-      catch { issues.push({ message: `${node.title} headers must be a JSON object with string values`, nodeId: node.id }); }
-      if (node.config.method !== "GET" && node.config.body?.trim()) { try { JSON.parse(node.config.body); } catch { issues.push({ message: `${node.title} body must be valid JSON`, nodeId: node.id }); } }
-    }
-    if (node.kind === "notify") {
-      if (!node.config.recipient?.includes("@")) issues.push({ message: `${node.title} needs a valid recipient email`, nodeId: node.id });
-      if (!node.config.message?.trim()) issues.push({ message: `${node.title} needs a message`, nodeId: node.id });
-    }
-    if (node.kind === "delay" && (!Number.isFinite(Number(node.config.duration)) || Number(node.config.duration) < 1)) issues.push({ message: `${node.title} needs a duration of at least 1`, nodeId: node.id });
-    if (node.kind === "trigger") { try { parseSampleInput(node.config.sampleData); } catch { issues.push({ message: `${node.title} sample input must be a JSON object`, nodeId: node.id }); } }
-    if (node.kind === "transform") { try { evaluateTransform(node.config.expression ?? transformExpression, samplePayload); } catch { issues.push({ message: `${node.title} has an unsupported expression`, nodeId: node.id }); } }
-    if (node.kind === "condition") {
-      const branches = flow.edges.filter((edge) => edge.from === node.id).map((edge) => edge.branch?.toLowerCase());
-      if (!branches.includes("yes") || !branches.includes("no")) issues.push({ message: `${node.title} needs both Yes and No outputs`, nodeId: node.id });
-    }
-  }
-  const reachable = new Set<string>();
-  const queue = triggers.map((node) => node.id);
-  while (queue.length) {
-    const id = queue.shift()!;
-    if (reachable.has(id)) continue;
-    reachable.add(id);
-    flow.edges.filter((edge) => edge.from === id && nodes.has(edge.to)).forEach((edge) => queue.push(edge.to));
-  }
-  for (const node of flow.nodes) if (!reachable.has(node.id)) issues.push({ message: `${node.title} cannot be reached from a trigger`, nodeId: node.id });
-  const color = new Map<string, number>();
-  const visit = (id: string): boolean => {
-    color.set(id, 1);
-    for (const edge of flow.edges.filter((item) => item.from === id)) {
-      if (!nodes.has(edge.to)) continue;
-      if (color.get(edge.to) === 1 || (!color.has(edge.to) && visit(edge.to))) return true;
-    }
-    color.set(id, 2);
-    return false;
-  };
-  for (const node of flow.nodes) if (!color.has(node.id) && visit(node.id)) { issues.push({ message: "Workflow contains a cycle", nodeId: node.id }); break; }
-  return issues;
-}
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -187,7 +75,7 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
   const [connectMode, setConnectMode] = useState(false);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [notice, setNotice] = useState("All changes saved");
-  const [storageReady, setStorageReady] = useState(false);
+  const [storageReadyFor, setStorageReadyFor] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(true);
   const { dark, toggleTheme } = useTheme();
   const [undoStack, setUndoStack] = useState<Workflow[][]>([]);
@@ -203,13 +91,11 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    let readSucceeded = false;
-    setStorageReady(false);
     readWorkflows().then((saved) => {
       if (cancelled) return;
-      readSucceeded = true;
       if (saved?.length) { setFlows(saved); const current = saved.find((flow) => flow.id === workflowId) ?? saved[0]; setActiveId(current.id); setSelected(current.nodes[0]?.id ?? ""); }
-    }).catch(() => { if (!cancelled) setNotice("Local storage unavailable"); }).finally(() => { if (!cancelled) setStorageReady(readSucceeded); });
+      setStorageReadyFor(workflowId);
+    }).catch(() => { if (!cancelled) setNotice("Local storage unavailable"); });
     return () => { cancelled = true; };
   }, [workflowId]);
   useEffect(() => {
@@ -223,7 +109,7 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
     window.addEventListener("keydown", focusPaletteSearch);
     return () => window.removeEventListener("keydown", focusPaletteSearch);
   }, []);
-  useEffect(() => { if (!storageReady) return; const timer = window.setTimeout(() => { writeWorkflows(flows).then(() => setNotice("All changes saved")).catch(() => setNotice("Could not save changes")); }, 350); return () => window.clearTimeout(timer); }, [flows, storageReady]);
+  useEffect(() => { if (storageReadyFor !== workflowId) return; const timer = window.setTimeout(() => { writeWorkflows(flows).then(() => setNotice("All changes saved")).catch(() => setNotice("Could not save changes")); }, 350); return () => window.clearTimeout(timer); }, [flows, storageReadyFor, workflowId]);
   useEffect(() => { let cancelled = false; listExecutions().then((records) => { if (!cancelled) setExecutionCount(records.filter((record) => record.workflowId === activeId).length); }).catch(() => { if (!cancelled) setExecutionCount(0); }); return () => { cancelled = true; }; }, [activeId, runState]);
 
   const commit = useCallback((updater: (flow: Workflow) => Workflow) => {
@@ -322,7 +208,7 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
         }
         if (current.kind === "condition") {
           const actual = String(readPayloadPath(output, current.config.field || "status")); const expected = current.config.value ?? ""; const operator = current.config.operator || "equals";
-          const matched = operator === "contains" ? actual.includes(expected) : operator === "greater" ? Number(actual) > Number(expected) : operator === "exists" ? actual.length > 0 : actual === expected;
+          const matched = evaluateCondition(actual, expected, operator);
           const branch = matched ? "yes" : "no"; message = `Condition evaluated ${matched ? "true" : "false"} (${actual || "empty"} ${operator} ${expected})`;
           outgoing = outgoing.filter((edge) => edge.branch?.toLowerCase() === branch);
         }
@@ -338,17 +224,12 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
         outgoing.forEach((edge) => queue.push(edge.to));
       }
       const failed = logs.some((item) => item.status === "error");
-      const skipReason = failed
-        ? "Skipped because the workflow stopped after a previous error"
-        : "Skipped because its IF branch was not selected";
-      const skippedNodes = active.nodes.filter((item) => !visited.has(item.id));
-      skippedNodes.forEach((item) => {
-        logs.push({ nodeId: item.id, nodeName: item.title, status: "skipped", message: skipReason });
-      });
+      const skippedNodes = getSkippedNodes(active, visited, failed);
+      logs.push(...skippedNodes);
       if (skippedNodes.length) {
         setNodeRunStates((states) => {
           const next = { ...states };
-          skippedNodes.forEach((item) => { if (!next[item.id]) next[item.id] = "skipped"; });
+          skippedNodes.forEach((item) => { if (!next[item.nodeId]) next[item.nodeId] = "skipped"; });
           return next;
         });
       }
