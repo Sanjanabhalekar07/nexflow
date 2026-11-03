@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { saveExecution, type ExecutionNode, type ExecutionRecord } from "@/lib/executions";
+import { useTheme } from "@/components/theme-provider";
 
 type Kind = "trigger" | "http" | "condition" | "delay" | "transform" | "notify" | "end";
 type FlowNode = { id: string; kind: Kind; title: string; x: number; y: number; config: Record<string, string> };
@@ -93,6 +95,7 @@ async function writeWorkflows(value: Workflow[]) {
 }
 
 export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
+  const router = useRouter();
   const [flows, setFlows] = useState<Workflow[]>([initial]);
   const [activeId, setActiveId] = useState(workflowId);
   const [selected, setSelected] = useState("n3");
@@ -105,7 +108,7 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
   const [connectMode, setConnectMode] = useState(false);
   const [notice, setNotice] = useState("All changes saved");
   const [drawer, setDrawer] = useState(true);
-  const [dark, setDark] = useState(false);
+  const { dark, toggleTheme } = useTheme();
   const [undoStack, setUndoStack] = useState<Workflow[][]>([]);
   const [redoStack, setRedoStack] = useState<Workflow[][]>([]);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -122,13 +125,33 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
     setFlows((current) => current.map((flow) => flow.id === activeId ? { ...updater(flow), updated: "Just now" } : flow));
     setNotice("Saving…");
   }, [activeId, flows]);
-  const addNode = (kind: Kind) => {
+  const addNodeAt = (kind: Kind, x: number, y: number) => {
     const item = palette.find((entry) => entry.kind === kind)!;
-    const id = uid(); const box = canvasRef.current?.getBoundingClientRect();
-    const x = Math.max(60, ((box?.width ?? 1000) / 2 - 110) / zoom);
-    const y = Math.max(60, ((box?.height ?? 600) / 2 - 50) / zoom);
-    commit((flow) => ({ ...flow, nodes: [...flow.nodes, { id, kind, title: item.title, x: x + flow.nodes.length % 3 * 30, y: y + flow.nodes.length % 3 * 24, config: kind === "http" ? { method: "GET", url: "https://api.example.com" } : kind === "condition" ? { field: "status", operator: "equals", value: "active" } : kind === "delay" ? { duration: "5", unit: "seconds" } : kind === "notify" ? { recipient: "", message: "" } : {} }] }));
+    const id = uid();
+    commit((flow) => ({ ...flow, nodes: [...flow.nodes, { id, kind, title: item.title, x: Math.max(16, x), y: Math.max(16, y), config: kind === "http" ? { method: "GET", url: "https://api.example.com" } : kind === "condition" ? { field: "status", operator: "equals", value: "active" } : kind === "delay" ? { duration: "5", unit: "seconds" } : kind === "notify" ? { recipient: "", message: "" } : {} }] }));
     setSelected(id);
+  };
+  const addNode = (kind: Kind) => {
+    const canvas = canvasRef.current; const rect = canvas?.getBoundingClientRect();
+    const x = ((rect?.width ?? 1000) / 2 + (canvas?.scrollLeft ?? 0)) / zoom - 105;
+    const y = ((rect?.height ?? 600) / 2 + (canvas?.scrollTop ?? 0)) / zoom - 56;
+    addNodeAt(kind, x, y);
+  };
+  const startCanvasPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest(".workflow-node,button,a,input")) return;
+    const canvas = canvasRef.current; if (!canvas) return;
+    const startX = event.clientX, startY = event.clientY, scrollX = canvas.scrollLeft, scrollY = canvas.scrollTop;
+    canvas.setPointerCapture(event.pointerId);
+    const move = (pointer: PointerEvent) => { canvas.scrollLeft = scrollX - (pointer.clientX - startX); canvas.scrollTop = scrollY - (pointer.clientY - startY); };
+    const stop = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", stop); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", stop, { once: true });
+  };
+  const dropNode = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const kind = event.dataTransfer.getData("application/nexflow-node") as Kind;
+    if (!palette.some((item) => item.kind === kind)) return;
+    const canvas = canvasRef.current; const rect = canvas?.getBoundingClientRect(); if (!canvas || !rect) return;
+    addNodeAt(kind, (event.clientX - rect.left + canvas.scrollLeft) / zoom - 105, (event.clientY - rect.top + canvas.scrollTop) / zoom - 56);
   };
   const updateConfig = (field: string, value: string) => commit((flow) => ({ ...flow, nodes: flow.nodes.map((item) => item.id === selected ? { ...item, config: { ...item.config, [field]: value } } : item) }));
   const updateTitle = (value: string) => commit((flow) => ({ ...flow, nodes: flow.nodes.map((item) => item.id === selected ? { ...item, title: value } : item) }));
@@ -185,21 +208,52 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
     } catch { setRunState("error"); setNotice("Run could not be saved to execution history"); }
     finally { setPlaying(false); }
   };
-  const cloneWorkflow = () => { const flow = { ...active, id: uid(), name: `${active.name} copy`, nodes: active.nodes.map((n) => ({ ...n, id: uid(), config: { ...n.config } })), edges: active.edges.map((e) => ({ ...e, id: uid(), from: active.nodes.find((n) => n.id === e.from)?.id ?? e.from, to: active.nodes.find((n) => n.id === e.to)?.id ?? e.to })) }; const idMap = new Map(active.nodes.map((n, i) => [n.id, flow.nodes[i].id])); flow.edges = active.edges.map((e) => ({ ...e, id: uid(), from: idMap.get(e.from)!, to: idMap.get(e.to)! })); setFlows((prev) => [...prev, flow]); setActiveId(flow.id); };
+  const cloneWorkflow = async () => { const flow = { ...active, id: uid(), name: `${active.name} copy`, nodes: active.nodes.map((n) => ({ ...n, id: uid(), config: { ...n.config } })), edges: [] as Edge[] }; const idMap = new Map(active.nodes.map((n, i) => [n.id, flow.nodes[i].id])); flow.edges = active.edges.map((e) => ({ ...e, id: uid(), from: idMap.get(e.from)!, to: idMap.get(e.to)! })); const next = [...flows, flow]; setFlows(next); await writeWorkflows(next); setActiveId(flow.id); setSelected(flow.nodes[0]?.id ?? ""); router.push(`/workflows/${flow.id}`); };
   const download = () => { const blob = new Blob([JSON.stringify(active, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `${active.name.toLowerCase().replaceAll(" ", "-")}.json`; link.click(); URL.revokeObjectURL(url); };
-  const importFile = (file?: File) => { if (!file) return; file.text().then((text) => { try { const parsed = JSON.parse(text) as Workflow; if (!parsed.name || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) throw new Error("Invalid workflow"); parsed.id = uid(); setFlows((prev) => [...prev, parsed]); setActiveId(parsed.id); setSelected(parsed.nodes[0]?.id ?? ""); setNotice("Workflow imported"); } catch { setNotice("That JSON file is not a valid workflow"); } }); };
+  const importFile = async (file?: File) => { if (!file) return; try { const parsed = JSON.parse(await file.text()) as Workflow; if (!parsed.name || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) throw new Error("Invalid workflow"); parsed.id = uid(); const next = [...flows, parsed]; setFlows(next); await writeWorkflows(next); setActiveId(parsed.id); setSelected(parsed.nodes[0]?.id ?? ""); setNotice("Workflow imported"); router.push(`/workflows/${parsed.id}`); } catch { setNotice("That JSON file is not a valid workflow"); } };
   const restore = (history: Workflow[][], otherSetter: typeof setUndoStack, setter: typeof setUndoStack) => { const snapshot = history.at(-1); if (!snapshot) return; otherSetter((prev) => [...prev, flows]); setter((prev) => prev.slice(0, -1)); setFlows(snapshot); };
+  const fitToScreen = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || active.nodes.length === 0) { setZoom(1); return; }
+    const minX = Math.min(...active.nodes.map((item) => item.x)); const minY = Math.min(...active.nodes.map((item) => item.y));
+    const maxX = Math.max(...active.nodes.map((item) => item.x + 210)); const maxY = Math.max(...active.nodes.map((item) => item.y + 112));
+    const scale = Math.min((canvas.clientWidth - 100) / (maxX - minX), (canvas.clientHeight - 100) / (maxY - minY), 1.25);
+    const nextZoom = Math.max(.45, scale); setZoom(nextZoom);
+    requestAnimationFrame(() => { canvas.scrollLeft = Math.max(0, minX * nextZoom - 50); canvas.scrollTop = Math.max(0, minY * nextZoom - 50); });
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("input,textarea,select,[contenteditable='true']")) return;
+      const command = event.ctrlKey || event.metaKey;
+      if (command && event.key.toLowerCase() === "z") { event.preventDefault(); event.shiftKey ? restore(redoStack, setUndoStack, setRedoStack) : restore(undoStack, setRedoStack, setUndoStack); return; }
+      if (command && event.key.toLowerCase() === "y") { event.preventDefault(); restore(redoStack, setUndoStack, setRedoStack); return; }
+      if (event.key === "Escape") { setConnectMode(false); setConnectFrom(null); return; }
+      if ((event.key === "Delete" || event.key === "Backspace") && node) {
+        event.preventDefault(); commit((flow) => ({ ...flow, nodes: flow.nodes.filter((item) => item.id !== node.id), edges: flow.edges.filter((edge) => edge.from !== node.id && edge.to !== node.id) })); setSelected(""); return;
+      }
+      if (selected && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+        event.preventDefault(); const delta = event.shiftKey ? 30 : 10;
+        const dx = event.key === "ArrowLeft" ? -delta : event.key === "ArrowRight" ? delta : 0;
+        const dy = event.key === "ArrowUp" ? -delta : event.key === "ArrowDown" ? delta : 0;
+        commit((flow) => ({ ...flow, nodes: flow.nodes.map((item) => item.id === selected ? { ...item, x: Math.max(0, item.x + dx), y: Math.max(0, item.y + dy) } : item) }));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [commit, flows, node, redoStack, selected, undoStack]);
 
   return <main className={`app-shell ${dark ? "dark" : ""}`}>
     <aside className="rail"><Link href="/workflows" className="brand-mark">n</Link><Link href="/workflows" className="rail-button active" title="Workflows">⌘</Link><Link href="/executions" className="rail-button" title="Executions">◷</Link><Link href="/templates" className="rail-button" title="Templates">▦</Link><div className="rail-spacer"/><button className="avatar">JD</button></aside>
     <div className="workspace">
       <header className="topbar"><div className="crumb"><Link className="crumb-muted" href="/workflows">Workflows</Link><span className="slash">/</span><input aria-label="Workflow name" className="workflow-name" value={active.name} onChange={(e) => { const value = e.target.value; setFlows((prev) => prev.map((f) => f.id === activeId ? { ...f, name: value } : f)); }}/><span className="save-state"><i/> {notice}</span></div><div className="top-actions"><button className="button subtle" onClick={() => setDark(!dark)} title="Toggle theme">◐</button><button className="button subtle" onClick={download}>↧ <span>Export</span></button><label className="button subtle file-label">↥ <span>Import</span><input type="file" accept="application/json,.json" onChange={(e) => importFile(e.target.files?.[0])}/></label><button className="button run-button" disabled={playing} onClick={run}><span>▶</span> {playing ? "Running…" : "Run workflow"}</button><button className="more-button" title="More options" onClick={cloneWorkflow}>···</button></div></header>
       <div className="editor-layout">
-        <aside className="library"><div className="library-page-link"><Link href="/workflows">← All workflows</Link></div><div className="library-divider"/><div className="section-heading"><span>NODE LIBRARY</span><button title="Collapse node library" onClick={() => setDrawer(!drawer)}>{drawer ? "⌃" : "⌄"}</button></div>{drawer && <><div className="search-box"><span>⌕</span><input placeholder="Search nodes..." value={query} onChange={(e) => setQuery(e.target.value)}/><kbd>⌘ K</kbd></div><div className="palette-scroll">{["TRIGGERS", "ACTIONS", "LOGIC", "OTHER"].map((group) => { const items = groupedPalette.filter((item) => item.group === group); if (!items.length) return null; return <div className="palette-group" key={group}><div className="group-label">{group}</div>{items.map((item) => <button className="palette-item" key={item.kind} onClick={() => addNode(item.kind)}><span className={`node-icon ${item.color}`}>{item.icon}</span><span><b>{item.title}</b><small>{item.description}</small></span><span className="add-hint">＋</span></button>)}</div>; })}</div></>}</aside>
-        <section className="canvas-column"><div className="canvas-toolbar"><div className="canvas-tabs"><button className="tab active">Workflow</button><Link className="tab" href="/executions">Executions <span className="tab-count">0</span></Link></div><div className="canvas-actions"><button className={`button ${connectMode ? "connect-active" : "subtle"}`} onClick={() => { setConnectMode(!connectMode); setConnectFrom(null); setNotice(connectMode ? "Connection mode closed" : "Select a source node, then a destination"); }}>↗ <span>{connectFrom ? "Choose target" : connectMode ? "Select source" : "Connect"}</span></button><span className="tool-separator"/><button className="square-button" title="Undo" onClick={() => restore(undoStack, setRedoStack, setUndoStack)} disabled={!undoStack.length}>↶</button><button className="square-button" title="Redo" onClick={() => restore(redoStack, setUndoStack, setRedoStack)} disabled={!redoStack.length}>↷</button><span className="tool-separator"/><button className="square-button" title="Zoom out" onClick={() => setZoom((v) => Math.max(.5, v - .1))}>−</button><span className="zoom-readout">{Math.round(zoom * 100)}%</span><button className="square-button" title="Zoom in" onClick={() => setZoom((v) => Math.min(1.5, v + .1))}>＋</button><button className="square-button" title="Fit to screen" onClick={() => setZoom(1)}>⛶</button></div></div>
-          <div className="canvas" ref={canvasRef}><div className="canvas-dots"/><div className="canvas-world" style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}><svg className="edges" width="1900" height="900" aria-label="Workflow connections">{active.edges.map((edge) => { const a = active.nodes.find((n) => n.id === edge.from), b = active.nodes.find((n) => n.id === edge.to); if (!a || !b) return null; const x1 = a.x + 210, y1 = a.y + 56, x2 = b.x, y2 = b.y + 56, mid = (x1 + x2) / 2; return <g key={edge.id}><path className={`edge-path ${runState === "success" ? "edge-done" : ""}`} d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`} markerEnd="url(#arrow)"/><circle className="edge-endpoint" cx={x2} cy={y2} r="3"/>{edge.branch && <g><rect x={mid - 17} y={(y1 + y2) / 2 - 11} width="34" height="20" rx="6" className="branch-bg"/><text x={mid} y={(y1 + y2) / 2 + 3} textAnchor="middle" className="branch-text">{edge.branch}</text></g>}</g>; })}<defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#aeb6c4"/></marker></defs></svg>
+        <aside className="library"><div className="library-page-link"><Link href="/workflows">← All workflows</Link></div><div className="library-divider"/><div className="section-heading"><span>NODE LIBRARY</span><button title="Collapse node library" onClick={() => setDrawer(!drawer)}>{drawer ? "⌃" : "⌄"}</button></div>{drawer && <><div className="search-box"><span>⌕</span><input placeholder="Search nodes..." value={query} onChange={(e) => setQuery(e.target.value)}/><kbd>⌘ K</kbd></div><div className="palette-scroll">{["TRIGGERS", "ACTIONS", "LOGIC", "OTHER"].map((group) => { const items = groupedPalette.filter((item) => item.group === group); if (!items.length) return null; return <div className="palette-group" key={group}><div className="group-label">{group}</div>{items.map((item) => <button className="palette-item" key={item.kind} draggable onDragStart={(event) => { event.dataTransfer.setData("application/nexflow-node", item.kind); event.dataTransfer.effectAllowed = "copy"; }} onClick={() => addNode(item.kind)}><span className={`node-icon ${item.color}`}>{item.icon}</span><span><b>{item.title}</b><small>{item.description}</small></span><span className="add-hint">＋</span></button>)}</div>; })}</div></>}</aside>
+        <section className="canvas-column"><div className="canvas-toolbar"><div className="canvas-tabs"><button className="tab active">Workflow</button><Link className="tab" href="/executions">Executions <span className="tab-count">0</span></Link></div><div className="canvas-actions"><button className={`button ${connectMode ? "connect-active" : "subtle"}`} onClick={() => { setConnectMode(!connectMode); setConnectFrom(null); setNotice(connectMode ? "Connection mode closed" : "Select a source node, then a destination"); }}>↗ <span>{connectFrom ? "Choose target" : connectMode ? "Select source" : "Connect"}</span></button><span className="tool-separator"/><button className="square-button" title="Undo" onClick={() => restore(undoStack, setRedoStack, setUndoStack)} disabled={!undoStack.length}>↶</button><button className="square-button" title="Redo" onClick={() => restore(redoStack, setUndoStack, setRedoStack)} disabled={!redoStack.length}>↷</button><span className="tool-separator"/><button className="square-button" title="Zoom out" onClick={() => setZoom((v) => Math.max(.5, v - .1))}>−</button><span className="zoom-readout">{Math.round(zoom * 100)}%</span><button className="square-button" title="Zoom in" onClick={() => setZoom((v) => Math.min(1.5, v + .1))}>＋</button><button className="square-button" title="Fit to screen" onClick={fitToScreen}>⛶</button></div></div>
+          <div className="canvas" ref={canvasRef} onPointerDown={startCanvasPan} onDragOver={(event) => event.preventDefault()} onDrop={dropNode}><div className="canvas-dots"/><div className="canvas-world" style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}><svg className="edges" width="1900" height="900" aria-label="Workflow connections">{active.edges.map((edge) => { const a = active.nodes.find((n) => n.id === edge.from), b = active.nodes.find((n) => n.id === edge.to); if (!a || !b) return null; const x1 = a.x + 210, y1 = a.y + 56, x2 = b.x, y2 = b.y + 56, mid = (x1 + x2) / 2; return <g key={edge.id}><path className={`edge-path ${runState === "success" ? "edge-done" : ""}`} d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`} markerEnd="url(#arrow)"/><circle className="edge-endpoint" cx={x2} cy={y2} r="3"/>{edge.branch && <g><rect x={mid - 17} y={(y1 + y2) / 2 - 11} width="34" height="20" rx="6" className="branch-bg"/><text x={mid} y={(y1 + y2) / 2 + 3} textAnchor="middle" className="branch-text">{edge.branch}</text></g>}</g>; })}<defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#aeb6c4"/></marker></defs></svg>
           {active.nodes.map((item) => { const meta = palette.find((p) => p.kind === item.kind)!; const isSelected = selected === item.id; const onPointerDown = (e: React.PointerEvent) => { if ((e.target as HTMLElement).closest("button")) return; e.preventDefault(); const startX = e.clientX, startY = e.clientY, originX = item.x, originY = item.y; (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); const move = (event: PointerEvent) => { const dx = (event.clientX - startX) / zoom, dy = (event.clientY - startY) / zoom; setFlows((prev) => prev.map((flow) => flow.id === activeId ? { ...flow, nodes: flow.nodes.map((n) => n.id === item.id ? { ...n, x: Math.max(0, originX + dx), y: Math.max(0, originY + dy) } : n) } : flow)); }; const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); setUndoStack((stack) => [...stack.slice(-39), flows]); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up, { once: true }); };
-            return <article key={item.id} className={`workflow-node ${isSelected ? "node-selected" : ""} ${playing && isSelected ? "node-running" : ""} ${connectFrom === item.id ? "node-source" : ""} ${invalidNodes.includes(item.id) ? "node-invalid" : ""}`} style={{ left: item.x, top: item.y }} onPointerDown={onPointerDown} onClick={() => connectMode ? connect(item.id) : setSelected(item.id)}><div className="node-main"><span className={`node-icon ${meta.color}`}>{meta.icon}</span><div className="node-text"><small>{meta.group === "TRIGGERS" ? "TRIGGER" : meta.group === "OTHER" ? "OUTPUT" : meta.group === "LOGIC" ? "LOGIC" : "ACTION"}</small><b>{item.title}</b><span>{item.kind === "http" ? `${item.config.method ?? "GET"} · ${item.config.url ?? "Set URL"}` : item.kind === "condition" ? `${item.config.field ?? "field"} ${item.config.operator ?? "equals"} ${item.config.value ?? "value"}` : item.kind === "notify" ? item.config.recipient || "Configure recipient" : meta.description}</span></div>{runState === "success" && <i className="node-check">✓</i>}</div><div className="node-port left-port"/><div className="node-port right-port"/></article>;
+            return <article key={item.id} role="button" tabIndex={0} aria-label={`Select ${item.title}`} className={`workflow-node ${isSelected ? "node-selected" : ""} ${playing && isSelected ? "node-running" : ""} ${connectFrom === item.id ? "node-source" : ""} ${invalidNodes.includes(item.id) ? "node-invalid" : ""}`} style={{ left: item.x, top: item.y }} onPointerDown={onPointerDown} onClick={() => connectMode ? connect(item.id) : setSelected(item.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); connectMode ? connect(item.id) : setSelected(item.id); } }}><div className="node-main"><span className={`node-icon ${meta.color}`}>{meta.icon}</span><div className="node-text"><small>{meta.group === "TRIGGERS" ? "TRIGGER" : meta.group === "OTHER" ? "OUTPUT" : meta.group === "LOGIC" ? "LOGIC" : "ACTION"}</small><b>{item.title}</b><span>{item.kind === "http" ? `${item.config.method ?? "GET"} · ${item.config.url ?? "Set URL"}` : item.kind === "condition" ? `${item.config.field ?? "field"} ${item.config.operator ?? "equals"} ${item.config.value ?? "value"}` : item.kind === "notify" ? item.config.recipient || "Configure recipient" : meta.description}</span></div>{runState === "success" && <i className="node-check">✓</i>}</div><div className="node-port left-port"/><div className="node-port right-port"/></article>;
           })}</div><div className="canvas-hint"><span>⌘</span> Drag nodes to arrange <i/> Click <span>＋</span> in the library to add</div><div className="minimap"><div className="minimap-view">{active.nodes.map((n) => <i key={n.id} style={{ left: `${n.x / 18}%`, top: `${n.y / 10}%` }}/>)}</div></div><div className="canvas-zoom">{active.nodes.length} nodes <i/> {active.edges.length} connections</div></div>
           <footer className="statusbar"><span className="status-green"><i/> {runState === "success" ? "Run successful" : "Workflow ready"}</span><span className="status-dot">·</span><span>{active.nodes.length} nodes</span><span className="status-dot">·</span><span>{active.edges.length} connections</span><button onClick={validate}>Check workflow <span>→</span></button></footer>
         </section>
