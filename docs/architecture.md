@@ -85,7 +85,7 @@ Workflow edits are autosaved after a 350 ms debounce. Creating, importing, and c
 - Click or drag a palette item to add a node.
 - Drag a node to move it; drag the blank canvas to pan.
 - Select **Connect**, then select a source and destination.
-- Click an edge to select it. Delete/Backspace or **Delete connection** removes the edge.
+- Click an edge or focus it and press Enter/Space to select it. Delete/Backspace or **Delete connection** removes the edge.
 - Arrow keys move the selected node by 10 pixels; Shift+arrow moves by 30 pixels.
 - Dragging a node records one undo step when its position changes; a no-op drag does not alter history, and a new move clears the redo stack.
 - Delete/Backspace removes the selected node. Escape exits connection mode.
