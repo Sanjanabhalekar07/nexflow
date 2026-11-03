@@ -38,6 +38,17 @@ function isWorkflow(value: unknown): value is Workflow {
 }
 const samplePayload: Record<string, unknown> = { id: 42, status: "active", name: "Alex Morgan", firstName: "Alex", lastName: "Morgan" };
 const transformExpression = "{{ firstName + ' ' + lastName }}";
+function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
+  let value: unknown = payload;
+  for (const part of path.split(".")) {
+    if (part === "__proto__" || part === "prototype" || part === "constructor" || !value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, part)) return "";
+    value = (value as Record<string, unknown>)[part];
+  }
+  return value ?? "";
+}
+function renderMessage(template: string, payload: Record<string, unknown>): string {
+  return template.replace(/\{\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}\}/g, (_match, path: string) => String(readPayloadPath(payload, path)));
+}
 function evaluateTransform(expression: string, payload: Record<string, unknown>): string {
   const source = expression.trim().replace(/^\{\{\s*/, "").replace(/\s*\}\}$/, "");
   const token = /(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|(-?\d+(?:\.\d+)?))/y;
@@ -93,7 +104,10 @@ function validateWorkflow(flow: Workflow): { message: string; nodeId?: string }[
       catch { issues.push({ message: `${node.title} headers must be a JSON object with string values`, nodeId: node.id }); }
       if (node.config.method !== "GET" && node.config.body?.trim()) { try { JSON.parse(node.config.body); } catch { issues.push({ message: `${node.title} body must be valid JSON`, nodeId: node.id }); } }
     }
-    if (node.kind === "notify" && !node.config.recipient?.includes("@")) issues.push({ message: `${node.title} needs a valid recipient email`, nodeId: node.id });
+    if (node.kind === "notify") {
+      if (!node.config.recipient?.includes("@")) issues.push({ message: `${node.title} needs a valid recipient email`, nodeId: node.id });
+      if (!node.config.message?.trim()) issues.push({ message: `${node.title} needs a message`, nodeId: node.id });
+    }
     if (node.kind === "delay" && (!Number.isFinite(Number(node.config.duration)) || Number(node.config.duration) < 1)) issues.push({ message: `${node.title} needs a duration of at least 1`, nodeId: node.id });
     if (node.kind === "transform") { try { evaluateTransform(node.config.expression ?? transformExpression, samplePayload); } catch { issues.push({ message: `${node.title} has an unsupported expression`, nodeId: node.id }); } }
     if (node.kind === "condition") {
@@ -249,7 +263,10 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
       while (queue.length && visited.size < active.nodes.length) {
         const id = queue.shift()!; if (visited.has(id)) continue; visited.add(id);
         const current = active.nodes.find((item) => item.id === id); if (!current) continue;
-        setSelected(id); setNodeRunStates((states) => ({ ...states, [id]: "running" })); await new Promise((resolve) => window.setTimeout(resolve, current.kind === "delay" ? Math.min(Number(current.config.duration) * 180, 1200) : 320));
+        setSelected(id); setNodeRunStates((states) => ({ ...states, [id]: "running" }));
+        const delayMultiplier = current.config.unit === "hours" ? 3600 : current.config.unit === "minutes" ? 60 : 1;
+        const waitMs = current.kind === "delay" ? Math.min(Number(current.config.duration) * delayMultiplier * 180, 1200) : 320;
+        await new Promise((resolve) => window.setTimeout(resolve, waitMs));
         if (current.kind === "http" && /fail|error/i.test(current.config.url ?? "")) {
           logs.push({ nodeId: id, nodeName: current.title, status: "error", message: "Mock API returned HTTP 500" }); setNodeRunStates((states) => ({ ...states, [id]: "error" })); break;
         }
@@ -274,7 +291,11 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
           outgoing = outgoing.filter((edge) => edge.branch?.toLowerCase() === branch);
           active.edges.filter((edge) => edge.from === id && edge.branch?.toLowerCase() !== branch).forEach((edge) => { const skipped = active.nodes.find((item) => item.id === edge.to); if (skipped) { logs.push({ nodeId: skipped.id, nodeName: skipped.title, status: "skipped", message: `Skipped: ${matched ? "No" : "Yes"} condition branch` }); setNodeRunStates((states) => states[skipped.id] ? states : { ...states, [skipped.id]: "skipped" }); } });
         }
-        if (current.kind === "notify") message = `Simulated notification sent to ${current.config.recipient}`;
+        if (current.kind === "notify") {
+          const renderedMessage = renderMessage(current.config.message ?? "", output);
+          output.lastNotification = { to: current.config.recipient, message: renderedMessage };
+          message = `Simulated notification sent to ${current.config.recipient}: ${renderedMessage}`;
+        }
         if (current.kind === "end") message = "Workflow path finished";
         logs.push({ nodeId: id, nodeName: current.title, status: "success", message, output: { ...output } });
         setNodeRunStates((states) => ({ ...states, [id]: "success" }));
