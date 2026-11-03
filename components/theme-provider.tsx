@@ -1,25 +1,28 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
 
 type ThemeContextValue = { dark: boolean; toggleTheme: () => void };
 const ThemeContext = createContext<ThemeContextValue>({ dark: false, toggleTheme: () => undefined });
 const STORAGE_KEY = "nexflow-theme";
+const THEME_EVENT = "nexflow-theme-change";
+
+function subscribe(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener(THEME_EVENT, callback);
+  return () => { window.removeEventListener("storage", callback); window.removeEventListener(THEME_EVENT, callback); };
+}
+function getSnapshot() { return window.localStorage.getItem(STORAGE_KEY) === "dark"; }
+function getServerSnapshot() { return false; }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY) === "dark";
-    setDark(saved);
-    document.documentElement.classList.toggle("dark", saved);
-  }, []);
+  const dark = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
   const toggleTheme = () => {
-    setDark((current) => {
-      const next = !current;
-      window.localStorage.setItem(STORAGE_KEY, next ? "dark" : "light");
-      document.documentElement.classList.toggle("dark", next);
-      return next;
-    });
+    const next = !getSnapshot();
+    window.localStorage.setItem(STORAGE_KEY, next ? "dark" : "light");
+    document.documentElement.classList.toggle("dark", next);
+    window.dispatchEvent(new Event(THEME_EVENT));
   };
   return <ThemeContext.Provider value={{ dark, toggleTheme }}>{children}</ThemeContext.Provider>;
 }
