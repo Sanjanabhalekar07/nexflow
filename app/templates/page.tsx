@@ -28,7 +28,7 @@ function buildFlow(key: string, name: string): Flow {
     edges = [{ id: "e1", from: "a", to: "b" }, { id: "e2", from: "b", to: "c" }, { id: "e3", from: "c", to: "d", branch: "Yes" }, { id: "e4", from: "d", to: "e" }, { id: "e5", from: "c", to: "f", branch: "No" }];
   }
   const nodeIds = new Map(nodes.map((node) => [node.id, crypto.randomUUID()]));
-  return { id, name, updated: "Just now", nodes: nodes.map((node) => ({ ...node, id: nodeIds.get(node.id)! })), edges: edges.map((edge) => ({ ...edge, id: crypto.randomUUID(), from: nodeIds.get(edge.from)!, to: nodeIds.get(edge.to)! })) };
+  return { id, name, updated: new Date().toISOString(), nodes: nodes.map((node) => ({ ...node, id: nodeIds.get(node.id)! })), edges: edges.map((edge) => ({ ...edge, id: crypto.randomUUID(), from: nodeIds.get(edge.from)!, to: nodeIds.get(edge.to)! })) };
 }
 
 async function storeFlow(flow: Flow) {

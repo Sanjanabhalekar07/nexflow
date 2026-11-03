@@ -16,7 +16,7 @@ The editor and page controls are client components because they use React state,
 
 ## Workflow graph model
 
-A workflow has an `id`, `name`, `updated` label, `nodes` array, and `edges` array. Each node stores an `id`, `kind`, `title`, canvas `x`/`y` coordinates, and a string configuration map. Each edge stores an `id`, source node ID, target node ID, and an optional branch label.
+A workflow has an `id`, `name`, an ISO `updated` timestamp, `nodes` array, and `edges` array. The workflow list displays the timestamp as a relative age, then as a local date after a week. Legacy text labels are migrated when the list loads. Each node stores an `id`, `kind`, `title`, canvas `x`/`y` coordinates, and a string configuration map. Each edge stores an `id`, source node ID, target node ID, and an optional branch label.
 
 Supported node kinds are:
 
@@ -78,7 +78,7 @@ Object store: `workspace`, keyed by `key`.
 
 The execution history page filters runs by status and date, searches workflow or step names, and can export an individual run or the visible filtered runs as JSON.
 
-Workflow edits are autosaved after a 350 ms debounce. Creating, importing, and cloning a workflow save before navigating to its editor route. Theme preference is stored in local storage under `nexflow-theme`.
+Workflow edits are autosaved after the initial IndexedDB read succeeds and a 350 ms debounce. Creating, importing, and cloning a workflow save before navigating to its editor route. Theme preference is stored in local storage under `nexflow-theme`.
 
 ## Editor interactions
 
