@@ -1,0 +1,72 @@
+{
+  "id": "customer-welcome-demo",
+  "name": "Customer welcome flow",
+  "updated": "Sample",
+  "nodes": [
+    {
+      "id": "trigger",
+      "kind": "trigger",
+      "title": "When I run this workflow",
+      "x": 180,
+      "y": 116,
+      "config": {}
+    },
+    {
+      "id": "request",
+      "kind": "http",
+      "title": "Fetch customer record",
+      "x": 480,
+      "y": 116,
+      "config": {
+        "method": "GET",
+        "url": "https://api.example.com/customers/42"
+      }
+    },
+    {
+      "id": "condition",
+      "kind": "condition",
+      "title": "Customer is active?",
+      "x": 780,
+      "y": 116,
+      "config": {
+        "field": "status",
+        "operator": "equals",
+        "value": "active"
+      }
+    },
+    {
+      "id": "notify",
+      "kind": "notify",
+      "title": "Send welcome message",
+      "x": 1080,
+      "y": 30,
+      "config": {
+        "recipient": "hello@example.com",
+        "message": "Welcome back!"
+      }
+    },
+    {
+      "id": "success-end",
+      "kind": "end",
+      "title": "Done",
+      "x": 1380,
+      "y": 30,
+      "config": {}
+    },
+    {
+      "id": "inactive-end",
+      "kind": "end",
+      "title": "Skip notification",
+      "x": 1080,
+      "y": 240,
+      "config": {}
+    }
+  ],
+  "edges": [
+    { "id": "trigger-request", "from": "trigger", "to": "request" },
+    { "id": "request-condition", "from": "request", "to": "condition" },
+    { "id": "condition-yes", "from": "condition", "to": "notify", "branch": "Yes" },
+    { "id": "notify-end", "from": "notify", "to": "success-end" },
+    { "id": "condition-no", "from": "condition", "to": "inactive-end", "branch": "No" }
+  ]
+}

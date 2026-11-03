@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Nexflow — Visual Workflow Builder
 
-## Getting Started
+Nexflow is a browser-based workflow editor inspired by tools such as n8n, Zapier, and Make. It lets users assemble a directed graph, configure simulated steps, validate paths, and run workflows locally. It has no production backend and makes no real HTTP requests or notifications.
 
-First, run the development server:
+## Run locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). The root route sends you to the workflow list.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Useful project commands:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npm run build
+npm start
+```
 
-## Learn More
+## Pages
 
-To learn more about Next.js, take a look at the following resources:
+- `/workflows` — create, search, duplicate, and delete workflows.
+- `/workflows/[id]` — edit one workflow on the visual canvas.
+- `/templates` — create a workflow from a sample pattern.
+- `/executions` — filter run history and expand node logs and outputs.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Editor features
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Add nodes from the searchable library by clicking or dragging them onto the canvas.
+- Move nodes with the pointer or arrow keys. Hold Shift with an arrow key to move farther.
+- Pan by dragging the canvas background. Use zoom controls or **Fit to screen** to change the view.
+- Select **Connect**, then choose a source and target node. For an IF node, its first two connections become Yes and No branches.
+- Select an edge and use Delete/Backspace or the toolbar action to remove it.
+- Configure HTTP Request, IF, Wait, Transform, and Notification nodes in the settings panel.
+- Validate the graph, simulate a run, and inspect the node outcomes on the canvas or in execution history.
+- Undo or redo with the toolbar, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, or Ctrl/Cmd+Y.
+- Import or export the active workflow as JSON. Theme choice is saved across pages.
 
-## Deploy on Vercel
+## Sample data and demo
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The first visit seeds a **Customer welcome flow**. It starts with sample customer data, makes a mock HTTP request, checks whether `status` equals `active`, and routes to the matching branch. Run it with **Run workflow**. The simulator highlights the traversed path and stores its logs in the Executions page.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The Templates page also creates API health check and data cleanup examples. To demonstrate a failed mock request, change an HTTP node URL to include `fail` or `error`, then run it. The simulator records a mock HTTP 500.
+
+A portable JSON version of the customer welcome example is available at [`public/samples/customer-welcome.json`](public/samples/customer-welcome.json) and can be imported from the editor.
+
+## Data and architecture
+
+Workflow graphs and execution records are stored in IndexedDB in the current browser. Theme choice is stored in local storage. Data is not synced between browsers or devices.
+
+See [docs/architecture.md](docs/architecture.md) for the graph model, persistence keys, simulator behavior, business rules, and known limitations.
+
+## Known limitations
+
+- HTTP requests and notifications are simulated. No credentials, network calls, or external integrations are used.
+- The simulator runs against a fixed sample customer payload. Transform nodes create the configured output field from the sample first and last name; arbitrary expressions are not evaluated.
+- Delay durations are shortened for demonstration, with a maximum simulated wait of 1.2 seconds per node.
+- Execution history is local to the browser and limited to the latest 100 runs.
+- This repository currently has lint and production build commands but no automated test suite.
