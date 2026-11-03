@@ -7,7 +7,7 @@ The app uses the Next.js App Router. Route pages stay separate so each workspace
 | Route | Responsibility |
 | --- | --- |
 | `/` | Redirects to `/workflows`. |
-| `/workflows` | Reads and manages the local workflow collection. |
+| `/workflows` | Reads and manages the local workflow collection, with search across workflow names and step names or types. |
 | `/workflows/[id]` | Loads the editor for one workflow ID. |
 | `/templates` | Creates a new workflow from one of the bundled examples. |
 | `/executions` | Reads, filters, and expands saved execution records. |

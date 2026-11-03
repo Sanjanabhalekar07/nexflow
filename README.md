@@ -21,7 +21,7 @@ npm start
 
 ## Pages
 
-- `/workflows` — create, search, duplicate, and delete workflows.
+- `/workflows` — create, search by workflow or step name, duplicate, and delete workflows.
 - `/workflows/[id]` — edit one workflow on the visual canvas.
 - `/templates` — create a workflow from a sample pattern.
 - `/executions` — filter run history and expand node logs and outputs.
