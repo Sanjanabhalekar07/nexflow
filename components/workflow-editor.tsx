@@ -299,7 +299,6 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
           const matched = operator === "contains" ? actual.includes(expected) : operator === "greater" ? Number(actual) > Number(expected) : operator === "exists" ? actual.length > 0 : actual === expected;
           const branch = matched ? "yes" : "no"; message = `Condition evaluated ${matched ? "true" : "false"} (${actual || "empty"} ${operator} ${expected})`;
           outgoing = outgoing.filter((edge) => edge.branch?.toLowerCase() === branch);
-          active.edges.filter((edge) => edge.from === id && edge.branch?.toLowerCase() !== branch).forEach((edge) => { const skipped = active.nodes.find((item) => item.id === edge.to); if (skipped) { logs.push({ nodeId: skipped.id, nodeName: skipped.title, status: "skipped", message: `Skipped: ${matched ? "No" : "Yes"} condition branch` }); setNodeRunStates((states) => states[skipped.id] ? states : { ...states, [skipped.id]: "skipped" }); } });
         }
         if (current.kind === "notify") {
           const renderedMessage = renderMessage(current.config.message ?? "", output);
@@ -313,6 +312,20 @@ export default function WorkflowEditor({ workflowId }: { workflowId: string }) {
         outgoing.forEach((edge) => queue.push(edge.to));
       }
       const failed = logs.some((item) => item.status === "error");
+      const skipReason = failed
+        ? "Skipped because the workflow stopped after a previous error"
+        : "Skipped because its IF branch was not selected";
+      const skippedNodes = active.nodes.filter((item) => !visited.has(item.id));
+      skippedNodes.forEach((item) => {
+        logs.push({ nodeId: item.id, nodeName: item.title, status: "skipped", message: skipReason });
+      });
+      if (skippedNodes.length) {
+        setNodeRunStates((states) => {
+          const next = { ...states };
+          skippedNodes.forEach((item) => { if (!next[item.id]) next[item.id] = "skipped"; });
+          return next;
+        });
+      }
       const record: ExecutionRecord = { id: uid(), workflowId: active.id, workflowName: active.name, status: failed ? "failed" : "success", startedAt, durationMs: Date.now() - started, nodes: logs };
       await saveExecution(record); setRunState(failed ? "error" : "success"); setNotice(failed ? "Run failed · mock API returned HTTP 500" : `Run completed · ${logs.filter((item) => item.status === "success").length} nodes executed`);
     } catch { setRunState("error"); setNotice("Run could not be saved to execution history"); }

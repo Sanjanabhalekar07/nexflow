@@ -47,7 +47,7 @@ The first issue is shown in the editor status text. When an issue belongs to a n
 
 ## Simulation behavior
 
-Runs begin at the workflow's single trigger, using the JSON sample input configured on that node (or the built-in sample when none is set). The graph is traversed with a queue. A visited set prevents repeat execution. Non-condition nodes enqueue all outgoing edges. A condition evaluates the current sample value using `equals`, `contains`, numeric `greater than`, or `exists`, then follows only the matching Yes or No edge. Nodes reached through the other branch are logged as skipped.
+Runs begin at the workflow's single trigger, using the JSON sample input configured on that node (or the built-in sample when none is set). The graph is traversed with a queue. A visited set prevents repeat execution. Non-condition nodes enqueue all outgoing edges. A condition evaluates the current sample value using `equals`, `contains`, numeric `greater than`, or `exists`, then follows only the matching Yes or No edge. After traversal, every unvisited node is recorded once as skipped: branch-exclusive nodes receive a message that their IF branch was not selected, while nodes left after an execution error receive a message that the workflow stopped after an earlier error. Nodes reached through a selected path, including a shared merge node, retain their actual run outcome.
 
 The sample payload is:
 
@@ -75,6 +75,8 @@ Object store: `workspace`, keyed by `key`.
 | --- | --- |
 | `nexflow-workflows-v1` | Array of workflow graphs. |
 | `nexflow-executions-v1` | Newest-first execution records, capped at 100. |
+
+The execution history page can export an individual run, including its node messages and output snapshots, as a JSON file.
 
 Workflow edits are autosaved after a 350 ms debounce. Creating, importing, and cloning a workflow save before navigating to its editor route. Theme preference is stored in local storage under `nexflow-theme`.
 
