@@ -34,7 +34,7 @@ Connections are directed. The editor prevents accidental self-connections throug
 
 Before a run, validation checks that:
 
-1. At least one trigger exists.
+1. Exactly one manual trigger exists, matching the simulator's single input payload.
 2. Every non-trigger node has an incoming edge.
 3. Every node is reachable by following edges from a trigger.
 4. Every condition has both a Yes and a No outgoing edge.
@@ -47,7 +47,7 @@ The first issue is shown in the editor status text. When an issue belongs to a n
 
 ## Simulation behavior
 
-Runs begin at all trigger nodes and traverse the graph with a queue. A visited set prevents repeat execution. Non-condition nodes enqueue all outgoing edges. A condition evaluates the current sample value using `equals`, `contains`, numeric `greater than`, or `exists`, then follows only the matching Yes or No edge. Nodes reached through the other branch are logged as skipped.
+Runs begin at the workflow's single trigger, using the JSON sample input configured on that node (or the built-in sample when none is set). The graph is traversed with a queue. A visited set prevents repeat execution. Non-condition nodes enqueue all outgoing edges. A condition evaluates the current sample value using `equals`, `contains`, numeric `greater than`, or `exists`, then follows only the matching Yes or No edge. Nodes reached through the other branch are logged as skipped.
 
 The sample payload is:
 

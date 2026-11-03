@@ -41,7 +41,7 @@ npm start
 
 ## Sample data and demo
 
-The first visit seeds a **Customer welcome flow**. It starts with sample customer data, makes a mock HTTP request, checks whether `status` equals `active`, and routes to the matching branch. Run it with **Run workflow**. The simulator highlights the traversed path and stores its logs in the Executions page.
+The first visit seeds a **Customer welcome flow**. It starts with sample customer data, makes a mock HTTP request, checks whether `status` equals `active`, and routes to the matching branch. Edit the trigger's sample JSON to exercise another path. Run it with **Run workflow**. The simulator highlights the traversed path and stores its logs in the Executions page.
 
 The Templates page also creates API health check and data cleanup examples. To demonstrate a failed mock request, change an HTTP node URL to include `fail` or `error`, then run it. The simulator records a mock HTTP 500.
 
@@ -56,7 +56,7 @@ See [docs/architecture.md](docs/architecture.md) for the graph model, persistenc
 ## Known limitations
 
 - HTTP requests and notifications are simulated. No credentials, network calls, or external integrations are used.
-- The simulator runs against a fixed sample customer payload. Transform expressions support field names, string/number literals, and `+` concatenation; arbitrary JavaScript is not evaluated.
+- The simulator starts from the trigger's sample JSON (the built-in demo uses a sample customer payload). Transform expressions support field names, string/number literals, and `+` concatenation; arbitrary JavaScript is not evaluated.
 - Delay durations are shortened for demonstration, with a maximum simulated wait of 1.2 seconds per node.
 - Execution history is local to the browser and limited to the latest 100 runs.
 - This repository currently has lint and production build commands but no automated test suite.
