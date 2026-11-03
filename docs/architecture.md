@@ -21,7 +21,7 @@ A workflow has an `id`, `name`, `updated` label, `nodes` array, and `edges` arra
 Supported node kinds are:
 
 - `trigger` — entry point for a manual run.
-- `http` — simulated request with method and URL.
+- `http` — simulated request with method, URL, JSON headers, and optional JSON body.
 - `condition` — compares a field from the sample payload and follows a Yes or No edge.
 - `delay` — adds a shortened wait to the simulation.
 - `transform` — writes a configured output field using the sample first and last name.
@@ -61,7 +61,7 @@ The sample payload is:
 }
 ```
 
-An HTTP URL containing `fail` or `error` produces a simulated HTTP 500 and ends the run. Other HTTP nodes report a simulated HTTP 200. Notification nodes write a log entry only; they do not send a message. Delay nodes use a short demonstration wait capped at 1.2 seconds. Transform nodes evaluate a small safe expression subset: field names (including dotted paths), quoted string or number literals, and `+` concatenation. Arbitrary JavaScript, function calls, and operators other than `+` are rejected during validation.
+An HTTP URL containing `fail` or `error` produces a simulated HTTP 500 and ends the run. Other HTTP nodes report a simulated HTTP 200 and add the parsed request configuration to the output log; no request leaves the browser. Headers must be a JSON object with string values. Non-GET request bodies, when present, must be valid JSON. Notification nodes write a log entry only; they do not send a message. Delay nodes use a short demonstration wait capped at 1.2 seconds. Transform nodes evaluate a small safe expression subset: field names (including dotted paths), quoted string or number literals, and `+` concatenation. Arbitrary JavaScript, function calls, and operators other than `+` are rejected during validation.
 
 Each saved execution includes a run ID, workflow ID/name, status, start time, duration, and per-node status, message, and output snapshot. The canvas separately tracks the current run's node states and traversed edge IDs for highlighting.
 

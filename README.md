@@ -34,6 +34,7 @@ npm start
 - Select **Connect**, then choose a source and target node. For an IF node, its first two connections become Yes and No branches.
 - Select an edge and use Delete/Backspace or the toolbar action to remove it.
 - Configure HTTP Request, IF, Wait, Transform, and Notification nodes in the settings panel.
+- Configure HTTP methods, URLs, JSON headers, and request bodies for non-GET methods.
 - Validate the graph, simulate a run, and inspect the node outcomes on the canvas or in execution history.
 - Undo or redo with the toolbar, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, or Ctrl/Cmd+Y.
 - Import or export the active workflow as JSON. Theme choice is saved across pages.
